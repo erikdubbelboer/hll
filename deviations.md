@@ -5,12 +5,6 @@ In a few places, we made some changes/additions to the upstream HyperLogLog++ pa
 kept to a minimum. Here they are.
 
 
-Corrections
------------
-In the version of the paper that we're using, there are two off-by-one errors in GetIndex() in
-Figure 7. We pointed these out to the authors, and they updated the appendix at http://goo.gl/iU8Ig
-with a corrected algorithm. We're using the updated version.
-
 Additions
 ---------
 - We added a `Hll.Combine()` method that merges two HyperLogLog++ calculations, which gives you the

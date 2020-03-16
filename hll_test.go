@@ -7,25 +7,6 @@ import (
 	"github.com/bmizerany/assert"
 )
 
-// adding values in the dense case
-// determine if the maximum rho value for a determined index is correctly written to M.
-func TestAddNormal(t *testing.T) {
-	h := NewHll(14, 20)
-
-	value := uint64(0xAABBCCDD00112210)
-	value2 := uint64(0xAABBCCDD00112211)
-
-	register := value >> (64 - h.p)
-	register2 := value2 >> (64 - h.p)
-	assert.Equal(t, register2, register)
-	assert.T(t, rho(value) > rho(value2))
-
-	h.switchToNormal()
-	h.addNormal(value)
-	h.addNormal(value2)
-	assert.Equal(t, h.bigM.Get(uint64(register)), rho(value))
-}
-
 // Check to make sure that the temp set gets merged when it's supposed to
 // and if it changes to the dense represtation if it passes the sparse threshold
 func TestAddSparse(t *testing.T) {
@@ -80,11 +61,12 @@ func TestCopy(t *testing.T) {
 // Tests cardinality accuracy with varying number of distinct uint64 inputs
 func TestCardinality(t *testing.T) {
 	// number of random values to estimate cardinalities for
-	counts := []int{1000, 5000, 20000, 50000, 100000, 250000, 1000000, 10000000}
+	counts := []int{1000, 5000, 6000, 8000, 10000, 15000, 20000, 25000, 50000, 100000, 250000, 1000000, 10000000}
 
 	for _, count := range counts {
 		// Create new Hll struct with p = 14 & p' = 25
 		h := NewHll(14, 25)
+
 		// Random uint64 values to test.
 		rands := randUint64s(t, count)
 
@@ -95,7 +77,10 @@ func TestCardinality(t *testing.T) {
 		card := h.Cardinality()
 
 		calculatedError := math.Abs(float64(card)-float64(count)) / float64(count)
-		assert.T(t, calculatedError < 0.15)
+		t.Logf("calculatedError: %8d of %8d: %f (%v)", card, count, calculatedError, h.isSparse)
+		if calculatedError > 0.15 {
+			t.Fail()
+		}
 		// endTime := time.Since(startTime)
 		//	fmt.Printf("\nActual Cardinality: %d\n Estimated Cardinality: %d\nError: %v\nTime Elapsed: %v\n\n", count, card, calculatedError, endTime)
 	}

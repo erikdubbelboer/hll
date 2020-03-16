@@ -25,9 +25,10 @@ func Example() {
 	// For this example, our inputs will just be strings, e.g. "1", "2"
 	for i := 0; i < numToInsert; i++ {
 		inputString := strconv.Itoa(i)
+		hash := hashU64(inputString)
 
 		// To use HLL, you hash your item, convert the hash to uint64, and pass it to Add().
-		hll.Add(hashU64(inputString))
+		hll.Add(hash)
 	}
 
 	// Duplicates do not affect the cardinality. The following loop has no effect.
@@ -37,5 +38,5 @@ func Example() {
 
 	// We inserted 1M unique elements, the cardinality should be roughly 1M.
 	fmt.Printf("%d\n", hll.Cardinality())
-	// Output: 989546
+	// Output: 1010201
 }

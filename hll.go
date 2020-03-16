@@ -6,7 +6,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 const (
@@ -150,15 +150,16 @@ func (h *Hll) Combine(other *Hll) {
 			if !ok {
 				break
 			}
-			index, r := decodeHash(hashCode, h.p, h.pPrime)
+			index, r := decodeSparseHashForNormal(hashCode, h.p, h.pPrime)
 			h.bigM.Set(index, maxU8(h.bigM.Get(index), r))
 		}
 	}
 }
 
 func (h *Hll) addSparse(x uint64) {
-	k := encodeHash(x, h.p, h.pPrime)
-	h.tempSet = append(h.tempSet, k)
+	k := encodeSparseHash(x, h.p, h.pPrime)
+
+	h.tempSet = append(h.tempSet, uint64(k))
 
 	tempSetBits := uint64(len(h.tempSet)) * 64
 	if tempSetBits > h.mergeSizeBits {
@@ -187,9 +188,9 @@ func (h *Hll) switchToNormal() {
 }
 
 func (h *Hll) addNormal(x uint64) {
-	offset := (64 - h.p)
+	offset := uint8(64 - h.p)
 	idx := x >> offset
-	r := rho(x)
+	r := computeRhoW(x, offset)
 	if r > h.bigM.Get(idx) {
 		h.bigM.Set(idx, r)
 	}

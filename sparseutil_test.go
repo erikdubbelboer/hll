@@ -24,42 +24,13 @@ func TestSparseIterator(t *testing.T) {
 	assert.T(t, !ok) // iterator should be exhausted
 }
 
-func TestRho(t *testing.T) {
-	testCases := []struct {
-		input        uint64
-		expectResult uint8
-	}{
-		{1, 1},
-		{0, 63},
-		{4, 3},
-	}
-
-	for i, testCase := range testCases {
-		actualResult := rho(testCase.input)
-		if testCase.expectResult != actualResult {
-			t.Errorf("Case %d actual result was %v", i, actualResult)
-		}
-	}
-}
-
-func Dedupe(input []uint64, p, pPrime uint) []uint64 {
-	var output []uint64
-	for idx, value := range input {
-		if idx > 0 && getIndex(value, p, pPrime) == getIndex(input[idx-1], p, pPrime) {
-			continue
-		}
-		output = append(output, value)
-	}
-	return output
-}
-
 func TestMerge(t *testing.T) {
 	const p = 12
 	const pPrime = 25
 
 	convertToHashCodes := func(xs []uint64) {
 		for i, x := range xs {
-			xs[i] = encodeHash(x, p, pPrime)
+			xs[i] = uint64(encodeSparseHash(x, p, pPrime))
 		}
 	}
 
@@ -79,7 +50,7 @@ func TestMerge(t *testing.T) {
 	mergedIter := merged.GetIterator()
 	value, valid := mergedIter()
 	for valid {
-		index, _ := decodeHash(value, p, pPrime)
+		index, _ := decodeSparseHash(value, p, pPrime)
 		assert.T(t, index > lastIndex, index, lastIndex)
 		lastIndex = index
 		value, valid = mergedIter()
@@ -99,4 +70,53 @@ func randUint64(t *testing.T) uint64 {
 	n, err := rand.Read(buf)
 	assert.T(t, err == nil && n == 8, err, n)
 	return binary.LittleEndian.Uint64(buf)
+}
+
+func TestDecodeHash(t *testing.T) {
+	x, y := decodeSparseHash(0x4ce3e, 15, 20)
+	if x != 314942 || y != 0 {
+		t.Errorf("expected 314942, 0 got %d, %d", x, y)
+	}
+
+	x, y = decodeSparseHash(2097173, 15, 20)
+	if x != 0 || y != 21 {
+		t.Errorf("expected 0, 21 got %d, %d", x, y)
+	}
+
+	x, y = decodeSparseHash(18701, 14, 25)
+	if x != 18701 || y != 0 {
+		t.Errorf("expected 0, 21 got %d, %d", x, y)
+	}
+}
+
+func TestEncode(t *testing.T) {
+	x := encode(0, 21, 15, 20)
+	if x != 2097173 {
+		t.Errorf("expected\n0b%b got\n0b%b", 2097173, x)
+	}
+
+	r := computeRhoW(0xf00d, 64-20)
+	if r != 29 {
+		t.Errorf("expected %d got %d", 29, r)
+	}
+
+	x = encodeSparseHash(0xf00d, 15, 20)
+	if x != 2097181 {
+		t.Errorf("expected\n0b%b got\n0b%b", 314942, x)
+	}
+
+	r = computeRhoW(3226844164433860790, 64-20)
+	if r != 1 {
+		t.Errorf("expected %d got %d", 1, r)
+	}
+
+	x = encodeSparseHash(3226844164433860790, 15, 20)
+	if x != 2464001 {
+		t.Errorf("expected\n0b%b got\n0b%b", 2464001, x)
+	}
+
+	x = encodeSparseHash(0x2486bb7bf76b8a, 14, 25)
+	if x != 18701 {
+		t.Errorf("expected\n0b%b got\n0b%b", 18701, x)
+	}
 }

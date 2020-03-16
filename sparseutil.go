@@ -2,64 +2,79 @@ package hll
 
 import (
 	"fmt"
+	"math/bits"
 	"sort"
 )
 
-// Bitstrings are uint64. Rho values (bucket counts in M) are uint64. Indices and p values are uint.
-// rho results (position of first 1 in a bitstring) are uint8 because only 6 bits are required to
-// encode the position of a bit in a 64-bit sequence (log2(64)==6).
+const RHOW_BITS = 6
+const RHOW_MASK = uint64(1<<RHOW_BITS) - 1
 
-// Return the position of the first set bit, starting with 1. This is the same as the number of
-// leading zeros + 1. Returns 63 if no bits were set. Since the result is in [1,63] it can be
-// encoded in 6 bits.
-func rho(x uint64) uint8 {
-	var i uint8
-	for i = 0; i < 62 && x&1 == 0; i++ {
-		x >>= 1
+func encode(sparseIndex uint32, sparseRhoW uint8, p, pPrime uint) uint32 {
+	mask := (uint32(1) << (pPrime - p)) - 1
+	if (sparseIndex & mask) != 0 {
+		return sparseIndex
 	}
-	return i + 1
+
+	var rhoEncodedFlag uint32
+	if pPrime >= p+RHOW_BITS {
+		rhoEncodedFlag = uint32(1) << pPrime
+	} else {
+		rhoEncodedFlag = uint32(1) << (p + RHOW_BITS)
+	}
+
+	normalIndex := sparseIndex >> (pPrime - p)
+
+	return rhoEncodedFlag | normalIndex<<RHOW_BITS | uint32(sparseRhoW)
+}
+
+func computeRhoW(value uint64, bts uint8) uint8 {
+	// Strip of the index and move the rhoW to a higher order.
+	w := value << (64 - bts)
+
+	// If the rhoW consists only of zeros, return the maximum length of bits + 1.
+	if w == 0 {
+		return bts + 1
+	}
+	return uint8(bits.LeadingZeros64(w) + 1)
 }
 
 // x is a hash code.
-func encodeHash(x uint64, p, pPrime uint) (hashCode uint64) {
-	if x&onesFromTo(64-pPrime, 63-p) == 0 {
-		r := rho(extractShift(x, 0, 63-pPrime))
-		return concat([]concatInput{
-			{x, 64 - pPrime, 63},
-			{uint64(r), 0, 5},
-			{1, 0, 0}, // this just adds a 1 bit at the end
-		})
-	} else {
-		return concat([]concatInput{
-			{x, 64 - pPrime, 63},
-			{0, 0, 0}, // this just adds a 0 bit at the end
-		})
-	}
+func encodeSparseHash(hash uint64, p, pPrime uint) (hashCode uint32) {
+	sparseIndex := uint32(hash >> (64 - pPrime))
+	sparseRhoW := computeRhoW(hash, uint8(64-pPrime))
+
+	return encode(sparseIndex, sparseRhoW, p, pPrime)
 }
 
 // k is an encoded hash.
-// In the version of the paper that we're using, there are two off-by-one errors in GetIndex() in
-// Figure 7. We pointed these out to the authors, and they updated the appendix at
-// http://goo.gl/iU8Ig with a corrected algorithm. We're using the updated version.
-func getIndex(k uint64, p, pPrime uint) uint64 {
-	if k&1 == 1 {
-		index := extractShift(k, 7, p+6) // erratum from paper, start index is 7, not 6
-		return index
+func decodeSparseHash(k uint64, p, pPrime uint) (idx uint64, rhoW uint8) {
+	var rhoEncodedFlag uint64
+	if pPrime >= p+RHOW_BITS {
+		rhoEncodedFlag = uint64(1) << pPrime
 	} else {
-		index := extractShift(k, 1, p) // erratum from paper, end index is p, not p+1
-		return index
+		rhoEncodedFlag = uint64(1) << (p + RHOW_BITS)
 	}
+
+	if k&rhoEncodedFlag == 0 {
+		return k, 0
+	}
+
+	return ((k ^ rhoEncodedFlag) >> RHOW_BITS) << (pPrime - p), uint8(k & RHOW_MASK)
 }
 
-// k is an encoded hash.
-func decodeHash(k uint64, p, pPrime uint) (idx uint64, rhoW uint8) {
-	var r uint8
-	if k&1 == 1 {
-		r = uint8(extractShift(k, 1, 6) + uint64(pPrime-p))
+func decodeSparseHashForNormal(k uint64, p, pPrime uint) (idx uint64, rhoW uint8) {
+	var rhoEncodedFlag uint64
+	if pPrime >= p+RHOW_BITS {
+		rhoEncodedFlag = uint64(1) << pPrime
 	} else {
-		r = rho(extractShift(k, 1, pPrime-p-1))
+		rhoEncodedFlag = uint64(1) << (p + RHOW_BITS)
 	}
-	return getIndex(k, p, pPrime), r
+
+	if k&rhoEncodedFlag == 0 {
+		return k >> (pPrime - p), computeRhoW(k, uint8(pPrime-p))
+	}
+
+	return (k ^ rhoEncodedFlag) >> RHOW_BITS, uint8((k & RHOW_MASK) + uint64(pPrime) - uint64(p))
 }
 
 type mergeElem struct {
@@ -81,7 +96,7 @@ func makeMergeElemIter(p, pPrime uint, input u64It) mergeElemIt {
 			if !ok {
 				return mergeElem{}, false
 			}
-			idx, r := decodeHash(hashCode, p, pPrime)
+			idx, r := decodeSparseHash(hashCode, p, pPrime)
 			if !firstElem && idx == lastIndex {
 				// In the case where the tmp_set is being merged with the sparse_list, the tmp_set
 				// may contain elements that have the same index value. In this case, they will
@@ -111,7 +126,6 @@ func makeU64SliceIt(in []uint64) u64It {
 
 // Both input iterators must be sorted by hashcode.
 func merge(p, pPrime uint, sizeEst uint64, it1, it2 u64It) *sparse {
-
 	leftIt := makeMergeElemIter(p, pPrime, it1)
 	rightIt := makeMergeElemIter(p, pPrime, it2)
 
@@ -163,9 +177,10 @@ func toNormal(s *sparse, p, pPrime uint) normal {
 		if !ok {
 			break
 		}
-		idx, r := decodeHash(k, p, pPrime)
-		val := maxU8(M.Get(uint64(idx)), r)
-		M.Set(uint64(idx), val)
+		idx, r := decodeSparseHashForNormal(k, p, pPrime)
+
+		val := maxU8(M.Get(idx), r)
+		M.Set(idx, val)
 	}
 	return M
 }
@@ -218,21 +233,14 @@ func (u uint64Sorter) Len() int {
 }
 
 func (u uint64Sorter) Less(i, j int) bool {
-	iIndex := getIndex(u.xs[i], u.p, u.pPrime)
-	jIndex := getIndex(u.xs[j], u.p, u.pPrime)
+	iIndex, iRho := decodeSparseHash(u.xs[i], u.p, u.pPrime)
+	jIndex, jRho := decodeSparseHash(u.xs[j], u.p, u.pPrime)
 	if iIndex != jIndex {
 		return iIndex < jIndex
 	}
-
-	// When two elements have the same index, sort in descending order of rho. This means that the
-	// highest rho value will be seen first, and subsequent elements can be discarded whem merging.
-	_, iRho := decodeHash(u.xs[i], u.p, u.pPrime)
-	_, jRho := decodeHash(u.xs[j], u.p, u.pPrime)
 	return iRho > jRho
 }
 
 func (u uint64Sorter) Swap(i, j int) {
-	tmp := u.xs[i]
-	u.xs[i] = u.xs[j]
-	u.xs[j] = tmp
+	u.xs[i], u.xs[j] = u.xs[j], u.xs[i]
 }

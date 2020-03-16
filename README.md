@@ -19,5 +19,5 @@ The HyperLogLog++ paper is available [here](http://static.googleusercontent.com/
 Instructions
 ------------
 
-See the [docs](http://godoc.org/github.com/lytics/hll).
+See the [docs](http://godoc.org/github.com/erikdubbelboer/hll).
 

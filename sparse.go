@@ -58,7 +58,6 @@ func (s *sparse) SizeInBytes() uint64 {
 
 // Returns a function that can be called repeatedly to yield values from the list.
 func (s *sparse) GetIterator() u64It {
-	// idx := 0
 	rdr := bytes.NewBuffer(s.buf)
 	var lastDecoded uint64 = 0
 	return func() (uint64, bool) {
