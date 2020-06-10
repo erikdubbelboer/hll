@@ -12,8 +12,6 @@ import (
 )
 
 func TestMarshalRoundTrip(t *testing.T) {
-	const p, pPrime = 14, 25
-
 	testCases := []struct {
 		p, pPrime uint
 	}{
@@ -103,8 +101,6 @@ func TestMarshalOmit(t *testing.T) {
 }
 
 func TestMarshalPbRoundtrip(t *testing.T) {
-	const p, pPrime = 14, 25
-
 	testCases := []struct {
 		p, pPrime uint
 	}{
@@ -137,8 +133,6 @@ func TestMarshalPbRoundtrip(t *testing.T) {
 }
 
 func TestMarshalGobRoundTrip(t *testing.T) {
-	const p, pPrime = 14, 25
-
 	testCases := []struct {
 		p, pPrime uint
 	}{

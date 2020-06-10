@@ -261,6 +261,64 @@ func murmurHash64WithSeed(bytes []byte, offset, length int, seed uint64) uint64 
 	return hash
 }
 
+/**
+ * Computes intermediate hash of 32 bytes of byte array from the given offset. Results are
+ * returned in the output array - this is 12% faster than allocating new arrays every time.
+ */
+func weakHashLength32WithSeeds(bytes []byte, offset int, seedA, seedB uint64) [2]uint64 {
+	part1 := load64(bytes, offset)
+	part2 := load64(bytes, offset+8)
+	part3 := load64(bytes, offset+16)
+	part4 := load64(bytes, offset+24)
+
+	seedA += part1
+	seedB = rotateRight(seedB+seedA+part4, 51)
+	c := seedA
+	seedA += part2
+	seedA += part3
+	seedB += rotateRight(seedA, 23)
+
+	return [2]uint64{seedA + part4, seedB + c}
+}
+
+/*
+ * Compute an 8-byte hash of a byte array of length greater than 64 bytes.
+ */
+func fullFingerprint(bytes []byte, offset, length int) uint64 {
+	// For lengths over 64 bytes we hash the end first, and then as we
+	// loop we keep 56 bytes of state: v, w, x, y, and z.
+	x := load64(bytes, offset)
+	y := load64(bytes, offset+length-16) ^ K1
+	z := load64(bytes, offset+length-56) ^ K0
+	v := weakHashLength32WithSeeds(bytes, offset+length-64, uint64(length), y)
+	w := weakHashLength32WithSeeds(bytes, offset+length-32, uint64(length)*K1, K0)
+	z += shiftMix(v[1]) * K1
+	x = rotateRight(z+x, 39) * K1
+	y = rotateRight(y, 33) * K1
+
+	// Decrease length to the nearest multiple of 64, and operate on 64-byte chunks.
+	length = (length - 1) & ^63
+	for {
+		x = rotateRight(x+y+v[0]+load64(bytes, offset+16), 37) * K1
+		y = rotateRight(y+v[1]+load64(bytes, offset+48), 42) * K1
+		x ^= w[1]
+		y ^= v[0]
+		z = rotateRight(z^w[0], 33)
+		v = weakHashLength32WithSeeds(bytes, offset, v[1]*K1, x+w[0])
+		w = weakHashLength32WithSeeds(bytes, offset+32, z+w[1], y)
+		tmp := z
+		z = x
+		x = tmp
+		offset += 64
+		length -= 64
+
+		if length == 0 {
+			break
+		}
+	}
+	return hash128to64(hash128to64(v[0], w[0])+shiftMix(y)*K1+z, hash128to64(v[1], w[1])+x)
+}
+
 func BigQueryHash(s string) uint64 {
 	bytes := []byte(s)
 	offset := 0
@@ -272,7 +330,7 @@ func BigQueryHash(s string) uint64 {
 	} else if length <= 64 {
 		result = hashLength33To64(bytes, offset, length)
 	} else {
-		panic("unsupported input length")
+		result = fullFingerprint(bytes, offset, length)
 	}
 
 	u := K0

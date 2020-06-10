@@ -1,7 +1,6 @@
 package hll
 
 import (
-	"fmt"
 	"math/bits"
 	"sort"
 )
@@ -197,26 +196,6 @@ func maxU64(x, y uint64) uint64 {
 		return x
 	}
 	return y
-}
-
-// For debugging purposes, return the input as "binary/hex/decimal"
-func binU(x uint) string {
-	return bin(uint64(x))
-}
-
-// For debugging purposes, return the input as "binary/hex/decimal"
-func bin(x uint64) string {
-	s := fmt.Sprintf("/%016x/%d", x, x)
-	for i := 0; i < 64; i++ {
-		thisBit := "0"
-		if x&1 == 1 {
-			thisBit = "1"
-		}
-		s = thisBit + s
-		x >>= 1
-	}
-
-	return s
 }
 
 func sortHashcodesByIndex(xs []uint64, p, pPrime uint) {
