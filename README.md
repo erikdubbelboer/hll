@@ -21,3 +21,59 @@ Instructions
 
 See the [docs](http://godoc.org/github.com/erikdubbelboer/hll).
 
+Example of how to import data from Bigquery:
+```go
+import (
+	"context"
+	"fmt"
+
+	"cloud.google.com/go/bigquery"
+	"github.com/erikdubbelboer/hll"
+	"google.golang.org/api/iterator"
+)
+
+func Import() (*hll.Hll, error) {
+	bq, err := bigquery.NewClient(context.Background(), "project")
+	if err != nil {
+		return nil, fmt.Errorf("Can't connect to BigQuery: %w", err)
+	}
+
+	q := bq.Query(`
+		SELECT
+			HLL_COUNT.INIT(column) AS h,
+		FROM project.dataset.table
+		WHERE ...
+	`)
+	it, err := q.Read(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query: %w", err)
+	}
+
+	var h *hll.Hll
+
+	for {
+		var r struct {
+			H []byte `bigquery:"h"`
+		}
+
+		if err := it.Next(&r); err == iterator.Done {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("failed to next: %w", err)
+		}
+
+		h, err = hll.NewHllFromBigquery(r.Users)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return h, nil
+}
+```
+Adding a new value to a HLL imported from Bigquery:
+```go
+func Add(h *hll.Hll, val string) {
+	h.Add(hll.BigQueryHash(val))
+}
+```

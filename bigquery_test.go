@@ -2,6 +2,7 @@ package hll
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 )
 
@@ -47,7 +48,12 @@ func TestBigquery_Null(t *testing.T) {
 }
 
 func TestBigquery_Sparse(t *testing.T) {
-	data, _ := base64.StdEncoding.DecodeString("CHAQAhgCIAiCBw4QAhgPIBQyBqz8IOqmDQ==")
+	// SELECT
+	//   HLL_COUNT.INIT(x)
+	// FROM UNNEST([
+	//   '90bf6b51-72b1-4642-a65e-960997f84e22',
+	//   '86ae7a61-eae6-4f9a-9334-74e679a584ad']) AS x
+	data, _ := base64.StdEncoding.DecodeString("CHAQAhgCIAuCBw4QAhgPIBQyBr6cE8adDQ==")
 
 	hll, err := NewHllFromBigquery(data)
 	if err != nil {
@@ -60,6 +66,13 @@ func TestBigquery_Sparse(t *testing.T) {
 }
 
 func TestBigquery_SparseCombine(t *testing.T) {
+	// SELECT
+	//   HLL_COUNT.INIT(x)
+	// FROM UNNEST([
+	//   '90bf6b51-72b1-4642-a65e-960997f84e22',
+	//   '86ae7a61-eae6-4f9a-9334-74e679a584ad',
+	//   '683f92ff-720e-400f-ad00-59c229306faf',
+	//   'a4407a76-908d-4669-a894-dadabeaaa564']) AS x
 	data, _ := base64.StdEncoding.DecodeString("CHAQBBgCIAuCBxQQBBgPIBQyDL6cE8adDfmFA4SgGw==")
 
 	hll, err := NewHllFromBigquery(data)
@@ -71,6 +84,7 @@ func TestBigquery_SparseCombine(t *testing.T) {
 		t.Errorf("expected a Cardinality of 4, got %d", c)
 	}
 
+	// Adding something that isn't in the HLL yet.
 	hll.Add(BigQueryHash("44ed2e76-7e8d-4513-829c-8b36e03f7ba6"))
 
 	if c := hll.Cardinality(); c != 5 {
@@ -82,7 +96,7 @@ func TestBigquery_SparseCombine(t *testing.T) {
 	hll2.Add(BigQueryHash("86ae7a61-eae6-4f9a-9334-74e679a584ad"))
 	hll2.Add(BigQueryHash("683f92ff-720e-400f-ad00-59c229306faf"))
 	hll2.Add(BigQueryHash("a4407a76-908d-4669-a894-dadabeaaa564"))
-	hll2.Add(BigQueryHash("e62f8688-3c40-4972-b6c0-a56974af10ac"))
+	hll2.Add(BigQueryHash("e62f8688-3c40-4972-b6c0-a56974af10ac")) // Only this one isn't in the HLL yet.
 
 	if c := hll2.Cardinality(); c != 5 {
 		t.Errorf("expected a Cardinality of 5, got %d", c)
@@ -97,19 +111,23 @@ func TestBigquery_SparseCombine(t *testing.T) {
 
 func TestBigquery_SparseCombine_SmallHash(t *testing.T) {
 	//	SELECT
-	//		HLL_COUNT.INIT(uuid) AS h
+	//		HLL_COUNT.INIT(x)
 	//  FROM UNNEST([
-	//		STRUCT
-	//			(1 AS id, "XnCtmrNISG0GuoCRSVnw2Q" AS uuid),
-	//			(2, "XnCtmyH550mNMwCfp2Q8mw"),
-	//			(3, "XnCtmxlfckecCfFF5ul8bA")
-	//		])
+	//			'XnCtmrNISG0GuoCRSVnw2Q',
+	//			'XnCtmyH550mNMwCfp2Q8mw',
+	//			'XnCtmxlfckecCfFF5ul8bA']) AS x
 	data, _ := base64.StdEncoding.DecodeString("CHAQAxgCIAuCBxAQAxgPIBQyCLPuCNB/sucL")
 
 	hll, err := NewHllFromBigquery(data)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if c := hll.Cardinality(); c != 3 {
+		t.Errorf("expected a Cardinality of 3, got %d", c)
+	}
+
+	hll.Add(BigQueryHash("XnCtmrNISG0GuoCRSVnw2Q"))
 
 	if c := hll.Cardinality(); c != 3 {
 		t.Errorf("expected a Cardinality of 3, got %d", c)
@@ -126,6 +144,53 @@ func TestBigquery_SparseCombine_SmallHash(t *testing.T) {
 	hll2.Add(BigQueryHash("XnCtmyH550mNMwCfp2Q8mw"))
 	hll2.Add(BigQueryHash("XnCtmxlfckecCfFF5ul8bA"))
 	hll2.Add(BigQueryHash("e62f8688-3c40-4972-b6c0-a56974af10ac"))
+
+	if c := hll2.Cardinality(); c != 4 {
+		t.Errorf("expected a Cardinality of 4, got %d", c)
+	}
+
+	hll.Combine(hll2)
+
+	if c := hll.Cardinality(); c != 5 {
+		t.Errorf("expected a Cardinality of 5, got %d", c)
+	}
+}
+
+func TestBigquery_SparseCombine_BigHash(t *testing.T) {
+	//	SELECT
+	//		HLL_COUNT.INIT(x)
+	//  FROM UNNEST([
+	//			REPEAT('XnCtmrNISG0GuoCRSVnw2Q', 100),
+	//			REPEAT('XnCtmyH550mNMwCfp2Q8mw', 100),
+	//			REPEAT('XnCtmxlfckecCfFF5ul8bA', 100)]) AS x
+	data, _ := base64.StdEncoding.DecodeString("CHAQAxgCIAuCBxEQAxgPIBQyCdiDBbzMD/yqJA==")
+
+	hll, err := NewHllFromBigquery(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if c := hll.Cardinality(); c != 3 {
+		t.Errorf("expected a Cardinality of 3, got %d", c)
+	}
+
+	hll.Add(BigQueryHash(strings.Repeat("XnCtmrNISG0GuoCRSVnw2Q", 100)))
+
+	if c := hll.Cardinality(); c != 3 {
+		t.Errorf("expected a Cardinality of 3, got %d", c)
+	}
+
+	hll.Add(BigQueryHash(strings.Repeat("44ed2e76-7e8d-4513-829c-8b36e03f7ba6", 100)))
+
+	if c := hll.Cardinality(); c != 4 {
+		t.Errorf("expected a Cardinality of 4, got %d", c)
+	}
+
+	hll2 := NewHll(DefaultBigqueryP, DefaultBigqueryPPrime)
+	hll2.Add(BigQueryHash(strings.Repeat("XnCtmrNISG0GuoCRSVnw2Q", 100)))
+	hll2.Add(BigQueryHash(strings.Repeat("XnCtmyH550mNMwCfp2Q8mw", 100)))
+	hll2.Add(BigQueryHash(strings.Repeat("XnCtmxlfckecCfFF5ul8bA", 100)))
+	hll2.Add(BigQueryHash(strings.Repeat("e62f8688-3c40-4972-b6c0-a56974af10ac", 100)))
 
 	if c := hll2.Cardinality(); c != 4 {
 		t.Errorf("expected a Cardinality of 4, got %d", c)

@@ -14,7 +14,7 @@ func TestNormal(t *testing.T) {
 func TestHuge(t *testing.T) {
 	// This test uses an obscene amount of memory and takes a long time. Only run it when requested.
 	if len(os.Getenv("HLL_HUGE")) == 0 {
-		t.Skip("Skipping gigantic memory test because HLL_HUGE isn't set")
+		t.Skip("Skipping gigantic memory test because HLL_HUGE isn't set (test requires around 6GB)")
 		return
 	}
 
